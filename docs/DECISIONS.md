@@ -95,7 +95,24 @@ This document records architectural decisions, assumptions, mathematical definit
 
 ---
 
-## 6. Cases, Storage & Challenge Service (Phases 5+ Preview)
+## 6. Cases, Storage & Challenge Service (Phase 5)
+
+- **Decision 6.1**: SQLite Relational Store Architecture.
+  - Implemented 10 relational tables matching specification: `payment_event`, `feature_snapshot`, `score_record`, `decision_record`, `interaction_record`, `case_record`, `outcome_record`, `reporting_record`, `reward_record`, `audit_log`.
+- **Decision 6.2**: Append-Only Audit Trail.
+  - Implemented `AuditLogger` writing immutable audit records capturing `(entity_type, entity_id, action, details, model_version, timestamp)` to ensure absolute non-repudiation.
+- **Decision 6.3**: Strict Case State Machine.
+  - Enforced 10 explicit states: `OPENED`, `ENRICHED`, `ASSIGNED`, `PENDING_INFO`, `PENDING_SUPERVISOR`, `DECIDED_FRAUD`, `DECIDED_LEGITIMATE`, `REPORT_DRAFTED`, `CLOSED`, `EXPIRED`.
+  - Illegal transitions raise `InvalidStateTransitionError`.
+  - High-value hold release gate: Releasing an account hold $\ge ₹50,000$ to `DECIDED_LEGITIMATE` is hard-blocked in code unless a supervisor approval flag is verified (`MD-3.4.3`).
+- **Decision 6.4**: Challenge Timeout Fail-Safe Guarantee.
+  - Interactive challenges run with a 5-minute timer. A timeout strictly transitions to `HOLD_FOR_REVIEW` and never releases funds, fulfilling statutory duty of care.
+- **Decision 6.5**: Fast-Path Scoring Microservice.
+  - FastAPI `/score` endpoint operates completely free of LLM or Text2SQL invocations, processing streaming feature extraction, routing, database persistence, and audit logging in under 200 milliseconds.
+
+---
+
+## 7. Feedback Loop & Selection Bias (Phase 6 Preview)
 
 - **Decision 4.1**: Split Conformal Prediction formulation.
   - Nonconformity score: $s(x, y) = 1 - \hat{P}(Y = y \mid x)$.
