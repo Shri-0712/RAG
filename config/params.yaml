@@ -1,0 +1,107 @@
+# FraudSense parameters
+# Tags:
+#   [PROPOSED]    design choice from the spec; tune on validation data
+#   [PLACEHOLDER] development value only; set with the risk team before any reported result
+#   [SIMULATED]   parameter controlling simulated external behaviour
+#   [REG]         taken from an RBI reference; see data/policy/clauses.json
+
+project:
+  mode: prototype            # the system must never be presented as deployable
+  currency: INR
+  random_seed: 42
+
+data:
+  sampling:
+    paysim_rows: 50000       # null = full dataset; integer for development/test sample
+    ieee_rows: 50000
+    european_rows: 50000
+    sample_seed: 42
+  replay_order: timestamp    # events are replayed strictly in time order
+
+decision:
+  # Amount thresholds (INR)
+  high_value_threshold: 50000   # [PLACEHOLDER] amount at or above which at least CHALLENGE applies
+  low_value_threshold: 2000     # [PLACEHOLDER] used only by the fail-safe default
+  # Conformal coverage target
+  conformal_coverage: 0.90      # [PROPOSED]
+  # Fast path budget
+  fast_path_timeout_ms: 200     # [PROPOSED]
+  # Novelty and width rule: HOLD if the set is wider than this and includes FRAUD
+  wide_set_min_size: 2          # [PROPOSED]
+
+timers:
+  challenge_timeout_min: 5      # [PROPOSED] a timeout moves to HOLD_FOR_REVIEW, never to release
+  analyst_first_look_min: 30    # [PROPOSED]
+  supervisor_review_min: 60     # [PROPOSED]
+  # In replay mode, timers run on simulated time
+  time_basis: simulated
+
+reward:
+  alpha: 1.0                    # [PROPOSED] ALLOW on fraud loses alpha * amount
+  lambda: 0.2                   # [PROPOSED] CHALLENGE on fraud loses lambda * amount
+  u: 5                          # [PLACEHOLDER] friction cost of one challenge, INR-equivalent
+  gamma: 0.9                    # [PROPOSED] prevented-loss fraction for HOLD on fraud
+  c_a: 150                      # [PLACEHOLDER] analyst cost per case, INR-equivalent
+  h: 300                        # [PLACEHOLDER] fixed false-hold cost
+  rho: 0.01                     # [PLACEHOLDER] amount-based false-hold term
+  # Reward values are reported with these exact parameters for every model.
+
+labels:
+  label_maturity_sim_days: 7    # [PROPOSED] simulation only
+  label_maturity_real_days: 30  # [PROPOSED] real-world design value; not used in replay
+  provisional_labels_in_training: false   # must stay false
+
+feedback:
+  random_audit_rate: 0.01       # [PROPOSED] share of ALLOW decisions sampled for review each week
+  analyst_error_rate: 0.02      # [SIMULATED] chance a simulated analyst records the wrong label
+
+simulation:
+  p_confirm_legit: 0.90         # [SIMULATED] legitimate challenges confirmed
+  p_deny_fraud: 0.70            # [SIMULATED] fraud challenges denied
+  supervisor_approval_rate: 0.95  # [SIMULATED]
+
+models:
+  gat:
+    layers: 2                   # [PROPOSED]
+    heads: 4
+    embedding_dim: 64
+    graph_refresh_events: 5000  # [PLACEHOLDER] refresh embeddings every N events
+    recency_window_hours: 72    # [PROPOSED] edges older than this get lower weight
+  risk_head:
+    calibration: temperature_scaling
+  conformal:
+    method: split
+    nonconformity: one_minus_probability_of_true_class   # document the exact choice in DECISIONS.md
+  dqn:
+    hidden_units: 128           # [PLACEHOLDER]
+    learning_rate: 0.001        # [PLACEHOLDER]
+    gamma_discount: 0.0         # [PROPOSED] one-step decisions; see design spec section 3.1
+    replay_buffer_size: 50000   # [PLACEHOLDER]
+    episodes: 20                # [PLACEHOLDER]
+  baselines:
+    gbdt_trees: 300             # [PLACEHOLDER]
+
+monitoring:
+  psi_alert: 0.2                # [PROPOSED]
+  hold_rate_change_alert: 0.5   # [PROPOSED] relative change in one day
+  p99_latency_alert_ms: 200     # [PROPOSED]
+  false_hold_ceiling: 0.01      # [PLACEHOLDER] set with the risk team
+  recall_at_false_hold: [0.005, 0.01, 0.02]   # [PROPOSED] evaluation operating points
+
+retraining:
+  candidate_schedule: weekly    # [PROPOSED]
+  full_schedule: monthly        # [PROPOSED]
+  promotion_requires: [cost_improvement, red_team_pass, human_approval]   # [PROPOSED]
+
+enrichment:
+  rag:
+    top_k: 3                    # [PROPOSED]
+    min_retrieval_score: 0.35   # [PLACEHOLDER] below this, return "no applicable clause found"
+    require_clause_citation: true   # [REG-aligned design rule]
+  text2sql:
+    row_limit: 500              # [PROPOSED]
+    time_limit_s: 5             # [PROPOSED]
+    allowed_tables: [payment_event, feature_snapshot, score_record, decision_record, case_record]
+  llm_adapter:
+    enabled: false              # default off; the deterministic fallback runs without any API key
+    env_var: FRAUDSENSE_LLM_KEY

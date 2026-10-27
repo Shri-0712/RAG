@@ -1,0 +1,88 @@
+{
+  "corpus_version": "0.1-draft",
+  "status": "PENDING COMPLIANCE REVIEW. Paraphrases for prototype retrieval only. Not legal text.",
+  "clauses": [
+    {
+      "id": "MD-3.1.1",
+      "source": "RBI Master Direction on Fraud Risk Management in Commercial Banks (July 2024)",
+      "para": "3.1.1",
+      "topic": "red_flag",
+      "summary": "An account showing early warning signals of fraud is red-flagged, which triggers deeper investigation and preventive measures.",
+      "verified": true
+    },
+    {
+      "id": "MD-3.4.2",
+      "source": "RBI Master Direction on Fraud Risk Management in Commercial Banks (July 2024)",
+      "para": "3.4.2",
+      "topic": "real_time_monitoring",
+      "summary": "Payment transactions should be monitored in real time, and banks should contain unauthorised or fraudulent transactions, with attention to money mule accounts.",
+      "verified": true
+    },
+    {
+      "id": "MD-3.4.3",
+      "source": "RBI Master Direction on Fraud Risk Management in Commercial Banks (July 2024)",
+      "para": "3.4.3",
+      "topic": "analytics_unit",
+      "summary": "An analytics unit should monitor digital payment patterns and initiate appropriate measures.",
+      "verified": true
+    },
+    {
+      "id": "MD-2.1.1",
+      "source": "RBI Master Direction on Fraud Risk Management in Commercial Banks (July 2024)",
+      "para": "2.1.1.1 to 2.1.1.4",
+      "topic": "natural_justice",
+      "summary": "Before a person or entity is declared fraudulent, the bank must issue a show-cause notice with full details, allow a reply period of at least 21 days, examine the reply, and record a reasoned order.",
+      "verified": true
+    },
+    {
+      "id": "MD-4.1.4",
+      "source": "RBI Master Direction on Fraud Risk Management in Commercial Banks (July 2024)",
+      "para": "4.1.4",
+      "topic": "natural_justice",
+      "summary": "Natural justice applies before the classification of an account as fraud.",
+      "verified": true
+    },
+    {
+      "id": "MD-5.1",
+      "source": "RBI Master Direction on Fraud Risk Management in Commercial Banks (July 2024)",
+      "para": "5.1",
+      "topic": "law_enforcement_reporting",
+      "summary": "Fraud incidents may need reporting to law enforcement agencies, depending on bank type and amount.",
+      "verified": true
+    },
+    {
+      "id": "MD-6.2.2",
+      "source": "RBI Master Direction on Fraud Risk Management in Commercial Banks (July 2024)",
+      "para": "6.2.2",
+      "topic": "cpfir_reporting",
+      "summary": "Disputed, suspected, or attempted payment-system fraud must be reported to RBI's payments fraud registry.",
+      "verified": true
+    },
+    {
+      "id": "MD-6.3.1",
+      "source": "RBI Master Direction on Fraud Risk Management in Commercial Banks (July 2024)",
+      "para": "6.3.1",
+      "topic": "fmr_reporting",
+      "summary": "Fraud classified after the natural justice process is reported to RBI through the Fraud Monitoring Return within 14 days of classification.",
+      "verified": true
+    },
+    {
+      "id": "MD-3.3.4",
+      "source": "RBI Master Direction on Fraud Risk Management in Commercial Banks (July 2024)",
+      "para": "3.3.4",
+      "topic": "credit_red_flag_reporting",
+      "summary": "Red-flagged credit accounts above a stated exposure threshold have reporting obligations to the credit information repository.",
+      "verified": false,
+      "note": "Paragraph number and threshold cited earlier from memory of the text. Confirm before use."
+    },
+    {
+      "id": "MD-4.1.3",
+      "source": "RBI Master Direction on Fraud Risk Management in Commercial Banks (July 2024)",
+      "para": "4.1.3",
+      "topic": "credit_red_flag_reporting",
+      "summary": "Red-flag status of a credit account is reported within a short window.",
+      "verified": false,
+      "note": "Window cited earlier as 7 days. Confirm before use."
+    }
+  ]
+}
