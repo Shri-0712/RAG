@@ -112,14 +112,25 @@ This document records architectural decisions, assumptions, mathematical definit
 
 ---
 
-## 7. Feedback Loop & Selection Bias (Phase 6 Preview)
+## 7. Feedback Loop & Selection Bias (Phase 6)
 
-- **Decision 4.1**: Split Conformal Prediction formulation.
-  - Nonconformity score: $s(x, y) = 1 - \hat{P}(Y = y \mid x)$.
-  - Calibration quantile $\hat{q}$ computed at coverage target $1 - \alpha = 0.90$.
-  - Prediction set: $C(x) = \{y \in \mathcal{Y} \mid 1 - \hat{P}(Y = y \mid x) \le \hat{q}\}$.
-- **Decision 4.2**: Single-step DQN formulation.
-  - In credit transaction streaming, a single payment authorization does not dynamically alter global arrival rates or payment system environment transitions.
-  - Therefore, discount factor $\gamma = 0$, transforming the DQN policy into a contextual bandit directly optimizing the operational cost payoff matrix specified in Section 6 of the project brief.
-- **Decision 4.3**: Challenge Timeout Fail-Safe.
-  - In compliance with regulatory duty of care, challenge timeouts strictly transition to `HOLD_FOR_REVIEW`, never to payment release.
+- **Decision 7.1**: Feedback sources are explicitly typed as `ANALYST_DECISION`, `DISPUTE_OUTCOME`, or `CASE_CLOSURE`. Analyst decisions are provisional and are retained only in the append-only audit trail; they never enter the retraining buffer, irrespective of elapsed time.
+- **Decision 7.2**: Only dispute outcomes and final case closures enter a seven-day simulated maturity queue (`labels.label_maturity_sim_days`). On maturity the service attributes the label to the original `decision_id`, persists exactly one `reward_record`, and makes the observation available for retraining.
+- **Decision 7.3**: The weekly ALLOW audit sampler uses the configured `feedback.random_audit_rate`. A sampled ALLOW observation receives inverse-propensity weight $w_i = 1 / P(\mathrm{audit}_i)$; reviewed CHALLENGE and HOLD observations have weight 1. The batch helper may normalize weights for numerical stability, while each stored training example preserves its raw propensity weight.
+- **Decision 7.4**: All feedback, audit selection, and maturity/reward events are explicitly logged as `SIMULATED`. The service accepts only existing persisted decision IDs and obtains action and amount from the original decision/payment records, preventing unlinked labels or rewards.
+
+---
+
+## 8. Slow-Path Enrichment (Phase 7)
+
+- **Decision 8.1**: Text2SQL is a deterministic, parameterised template service, not a general SQL agent. It permits a single bounded `SELECT` against only the configured case-enrichment tables. It rejects prompt-injection language, DDL/DML, comments, multiple statements, and non-allowlisted tables.
+- **Decision 8.2**: Policy retrieval is closed-world and operates only over verified entries in `data/policy/clauses.json`. It uses BM25 plus normalized token-overlap fusion, returns clause IDs with each answer, and returns `No applicable clause found` when confidence is below the configured threshold or the question contains prompt-injection language.
+- **Decision 8.3**: Customer prompts are selected only from fixed approved templates. CPFIR/FMR output is a local checklist draft with `SIMULATED — NOT FOR SUBMISSION` in the content and filename; the service has no network or submission capability.
+
+---
+
+## 9. Analyst UI, Monitoring & Red Team (Phases 8–9)
+
+- **Decision 9.1**: The Streamlit console has a permanent prototype banner, a locally persisted case queue, case details, guarded analyst questions, and reason/clause-required simulated outcomes. It does not offer customer-contact or reporting controls.
+- **Decision 9.2**: Monitoring computes PSI, hold rate, false-hold rate, challenge-denial rate, median/p99 decision latency, and conformal coverage. Alerts are informational and require human review; they never automatically alter a payment decision.
+- **Decision 9.3**: The red-team runner records SQL and prompt-injection rejection outcomes locally. Graph camouflage and feature perturbation are intentionally reported as not evaluated if no trained checkpoint is available, in accordance with the requirement not to fabricate a metric.

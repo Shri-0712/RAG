@@ -1,0 +1,7 @@
+{
+  "status": "SIMULATED",
+  "sql_injection_rejected": true,
+  "prompt_injection_rejected": true,
+  "graph_camouflage": "Not evaluated: no trained graph checkpoint supplied.",
+  "feature_perturbation": "Not evaluated: no trained scoring checkpoint supplied."
+}

@@ -77,3 +77,33 @@ pytest tests/ -v
 # 3. Check code formatting
 ruff check src tests
 ```
+
+## 5. Run the simulated prototype
+
+```bash
+# Fast scoring API (local SQLite; no LLM calls)
+uvicorn fraudsense.scoring.api:app --reload
+
+# Replay public PaySim data in timestamp order
+python scripts/run_replay.py --samples 100
+
+# Local analyst console
+streamlit run app/analyst_ui.py
+
+# Security checks; output is reports/red_team_results.json
+python scripts/red_team.py
+```
+
+`run_replay.py` requires a PaySim CSV in `data/raw/`. The red-team script never
+contacts external systems. Its graph-camouflage and feature-perturbation portions
+are reported as not evaluated unless a trained model checkpoint is supplied; the
+project does not fabricate those metrics.
+
+## 6. Safety boundary
+
+- The policy corpus is paraphrased prototype material, not legal advice or RBI text.
+- Text2SQL permits only allowlisted, bounded `SELECT` queries; it rejects prompt
+  injection, DDL/DML, comments, multiple statements, and unapproved tables.
+- CPFIR/FMR outputs are local JSON checklists whose filenames and contents say
+  `SIMULATED`; they cannot submit reports.
+- The UI records only local, simulated analyst outcomes and has a permanent warning banner.
