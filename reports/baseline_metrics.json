@@ -1,0 +1,129 @@
+{
+  "dataset": "PaySim",
+  "test_events": 10000,
+  "test_frauds": 6,
+  "baseline_a": {
+    "name": "Baseline A (GBDT Tabular with Tuned Thresholds)",
+    "pr_auc": 1.0,
+    "recall_at_fpr": {
+      "recall_at_fpr_0.5pct": 1.0,
+      "recall_at_fpr_1.0pct": 1.0,
+      "recall_at_fpr_2.0pct": 1.0
+    },
+    "cost_per_10k": -5687833.57,
+    "total_reward": 5687833.57,
+    "action_distribution": {
+      "HOLD_FOR_REVIEW": 0.0038,
+      "ALLOW": 0.9962
+    },
+    "tuned_threshold_challenge": 0.5,
+    "tuned_threshold_hold": 0.55
+  },
+  "baseline_b": {
+    "name": "Baseline B (Bayes-Optimal Cost-Sensitive without Graph)",
+    "cost_per_10k": -5558269.92,
+    "total_reward": 5558269.92,
+    "action_distribution": {
+      "CHALLENGE": 0.3259,
+      "ALLOW": 0.6682,
+      "HOLD_FOR_REVIEW": 0.0059
+    }
+  },
+  "sensitivity_curve": [
+    {
+      "threshold": 0.05,
+      "hold_rate": 0.0046,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.1,
+      "hold_rate": 0.0042,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.15,
+      "hold_rate": 0.0042,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.2,
+      "hold_rate": 0.0042,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.25,
+      "hold_rate": 0.0042,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.3,
+      "hold_rate": 0.0042,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.35,
+      "hold_rate": 0.0042,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.4,
+      "hold_rate": 0.0042,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.45,
+      "hold_rate": 0.0042,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.5,
+      "hold_rate": 0.0038,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.55,
+      "hold_rate": 0.0038,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.6,
+      "hold_rate": 0.0038,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.65,
+      "hold_rate": 0.0038,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.7,
+      "hold_rate": 0.0038,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.75,
+      "hold_rate": 0.0038,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.8,
+      "hold_rate": 0.0038,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.85,
+      "hold_rate": 0.0038,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.9,
+      "hold_rate": 0.0038,
+      "missed_fraud_rate": 0.0
+    },
+    {
+      "threshold": 0.95,
+      "hold_rate": 0.0017,
+      "missed_fraud_rate": 0.0
+    }
+  ]
+}

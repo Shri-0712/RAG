@@ -31,7 +31,7 @@ This document records architectural decisions, assumptions, mathematical definit
   - `ProductCD` $\to$ `channel`.
 - **Decision 2.4**: European Credit Card Fraud mapping.
   - `Time`: seconds elapsed. Mapped to `2025-01-01T00:00:00Z` + `timedelta(seconds=Time)`.
-  - As European Credit Card dataset contains anonymous PCA features without natural account IDs, synthetic sequential account IDs (`EU_ACC_<row_id>`) are assigned. This dataset is designated exclusively for tabular risk head and DQN sanity checks, not graph modeling.
+  - As European Credit Card dataset contains anonymous PCA features without natural account IDs, synthetic sequential account IDs (`EU_CARD_<id>`) are assigned. This dataset is designated exclusively for tabular risk head and DQN sanity checks, not graph modeling.
 - **Decision 2.5**: Subsampling for development and testing.
   To ensure test suites run within seconds on developer machines, `config/params.yaml` defines `sampling.paysim_rows`, `sampling.ieee_rows`, and `sampling.european_rows`. Setting these to `null` allows unconstrained full-dataset runs for final benchmarking.
 - **Decision 2.6**: Strict time ordering.
@@ -39,14 +39,31 @@ This document records architectural decisions, assumptions, mathematical definit
 
 ---
 
-## 3. Modeling & Decision Logic (Phases 2–4 Preview)
+## 3. Graph Architecture & Feature Store (Phase 2)
 
-- **Decision 3.1**: Split Conformal Prediction formulation.
+- **Decision 3.1**: Temporal Recency Decay Formulation.
+  - Transaction edges decay exponentially based on elapsed time relative to evaluation timestamp:
+    $$w_{ij}(t_{\text{eval}}) = \exp\left(-\frac{\max(0, t_{\text{eval}} - t_{\text{edge}})}{\tau}\right)$$
+    where $\tau = 72 \text{ hours} = 259,200 \text{ seconds}$ (configured in `params.yaml: models.gat.recency_window_hours`).
+- **Decision 3.2**: Ego-Network Bidirectionality.
+  - In `DynamicGraphBuilder.get_k_hop_subgraph`, the directed transaction edge index is symmetrized to an undirected representation during neighborhood discovery so an account's ego-network reflects both money received (inflow) and money sent (outflow).
+- **Decision 3.3**: Strict Causal Feature Streaming.
+  - `FeatureService` guarantees zero lookahead: historical sliding windows (1h, 24h, 72h) are queried *prior* to appending the current transaction to the account's state deque.
+- **Decision 3.4**: Gradient-Boosted Tree Backend.
+  - Used `sklearn.ensemble.HistGradientBoostingClassifier` for Baseline A to ensure full cross-platform compatibility across macOS Apple Silicon and Linux without external OpenMP shared library (`libomp.dylib`) dependencies.
+- **Decision 3.5**: Bayes-Optimal Cost Minimizer (Baseline B).
+  - Baseline B directly optimizes the expected cost over candidate actions $a \in \{\text{ALLOW}, \text{CHALLENGE}, \text{HOLD\_FOR\_REVIEW}\}$ using the calibrated posterior probability $\hat{p}$ and payment amount $A$, without graph features.
+
+---
+
+## 4. Modeling & Decision Logic (Phases 3–4 Preview)
+
+- **Decision 4.1**: Split Conformal Prediction formulation.
   - Nonconformity score: $s(x, y) = 1 - \hat{P}(Y = y \mid x)$.
   - Calibration quantile $\hat{q}$ computed at coverage target $1 - \alpha = 0.90$.
   - Prediction set: $C(x) = \{y \in \mathcal{Y} \mid 1 - \hat{P}(Y = y \mid x) \le \hat{q}\}$.
-- **Decision 3.2**: Single-step DQN formulation.
+- **Decision 4.2**: Single-step DQN formulation.
   - In credit transaction streaming, a single payment authorization does not dynamically alter global arrival rates or payment system environment transitions.
   - Therefore, discount factor $\gamma = 0$, transforming the DQN policy into a contextual bandit directly optimizing the operational cost payoff matrix specified in Section 6 of the project brief.
-- **Decision 3.3**: Challenge Timeout Fail-Safe.
+- **Decision 4.3**: Challenge Timeout Fail-Safe.
   - In compliance with regulatory duty of care, challenge timeouts strictly transition to `HOLD_FOR_REVIEW`, never to payment release.
