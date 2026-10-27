@@ -1,0 +1,48 @@
+{
+  "dataset": "PaySim",
+  "test_events": 10000,
+  "test_frauds": 6,
+  "models": {
+    "baseline_a": {
+      "name": "Baseline A (GBDT Tabular)",
+      "cost_per_10k": -5687833.57,
+      "total_reward": 5687833.57,
+      "action_distribution": {
+        "ALLOW": 0.9962,
+        "HOLD_FOR_REVIEW": 0.0038
+      }
+    },
+    "baseline_b": {
+      "name": "Baseline B (Bayes-Optimal Cost-Sensitive)",
+      "cost_per_10k": -5558269.92,
+      "total_reward": 5558269.92,
+      "action_distribution": {
+        "CHALLENGE": 0.3259,
+        "ALLOW": 0.6682,
+        "HOLD_FOR_REVIEW": 0.0059
+      }
+    },
+    "risk_head_alone": {
+      "name": "Risk Head Alone (GAT + MLP + Calibrated Thresholds)",
+      "cost_per_10k": -5574204.84,
+      "total_reward": 5574204.84,
+      "action_distribution": {
+        "CHALLENGE": 0.9642,
+        "ALLOW": 0.0312,
+        "HOLD_FOR_REVIEW": 0.0046
+      }
+    },
+    "full_pipeline": {
+      "name": "Full Pipeline (GAT + Conformal + DQN + Mask + Override)",
+      "cost_per_10k": -5463307.63,
+      "total_reward": 5463307.63,
+      "action_distribution": {
+        "CHALLENGE": 0.9706,
+        "ALLOW": 0.0194,
+        "HOLD_FOR_REVIEW": 0.01
+      },
+      "latency_p50_ms": 0.067,
+      "latency_p99_ms": 0.082
+    }
+  }
+}

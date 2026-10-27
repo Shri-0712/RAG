@@ -18,14 +18,17 @@ import pandas as pd
 from sklearn.metrics import average_precision_score
 
 from fraudsense.config import get_project_root
+from fraudsense.decision.router import DecisionRouter
 from fraudsense.features.service import FeatureService
 from fraudsense.feedback.reward import RewardCalculator
 from fraudsense.graph.builder import DynamicGraphBuilder
 from fraudsense.ingest.paysim_loader import load_paysim
 from fraudsense.models.baselines import BaselineA, BaselineB
 from fraudsense.models.conformal import SplitConformalCalibrator
+from fraudsense.models.dqn import DQNActionPolicy
 from fraudsense.models.gat import GATEncoder
 from fraudsense.models.risk_head import CalibratedRiskHead
+from fraudsense.policy.mask import PolicyMask
 
 
 def compute_recall_at_fpr(
@@ -336,19 +339,202 @@ def run_phase3_evaluation(n_samples: int = 50000) -> dict[str, Any]:
     return results
 
 
+def run_phase4_evaluation(n_samples: int = 50000) -> dict[str, Any]:
+    """
+    Evaluates all 4 models: Baseline A, Baseline B, Risk Head alone, and Full Pipeline (GAT + Conformal + DQN + Mask).
+    Reports cost per 10,000 payments for every model under identical operational parameters.
+    """
+    print("\n========================================================")
+    print(f"--- Phase 4: Full Multi-Model Comparison ({n_samples} events) ---")
+    print("========================================================")
+
+    # 1. Evaluate Baselines
+    res_base = run_baseline_evaluation(n_samples=n_samples)
+    base_a_metrics = res_base["baseline_a"]
+    base_b_metrics = res_base["baseline_b"]
+
+    # 2. Setup Data for Deep Pipelines
+    events = load_paysim(n_rows=n_samples)
+    feat_service = FeatureService()
+    X_tab, _ = feat_service.extract_batch(events)
+    y = np.array([e.label for e in events], dtype=int)
+    amounts = np.array([e.amount for e in events], dtype=float)
+
+    graph_builder = DynamicGraphBuilder()
+    for e in events:
+        graph_builder.add_event(e)
+    pyg_data = graph_builder.build_pyg_data()
+
+    gat = GATEncoder(in_channels=4, hidden_channels=16, out_channels=64, heads=4)
+    gat.eval()
+    with __import__("torch").no_grad():
+        node_embeds = gat(pyg_data.x, pyg_data.edge_index, pyg_data.edge_weight).numpy()
+
+    gat_embeds = [node_embeds[graph_builder.node_to_idx.get(e.payer_id, 0)] for e in events]
+    X_full = np.hstack([np.array(gat_embeds, dtype=np.float32), X_tab])
+
+    n = len(events)
+    train_end = int(n * 0.6)
+    cal_end = int(n * 0.8)
+
+    X_train, y_train, amt_train = X_full[:train_end], y[:train_end], amounts[:train_end]
+    X_cal, y_cal, amt_cal = (
+        X_full[train_end:cal_end],
+        y[train_end:cal_end],
+        amounts[train_end:cal_end],
+    )
+    X_test, y_test, amt_test = X_full[cal_end:], y[cal_end:], amounts[cal_end:]
+    events_test = events[cal_end:]
+    X_tab_test = X_tab[cal_end:]
+    X_gat_test = np.array(gat_embeds[cal_end:], dtype=np.float32)
+
+    risk_head = CalibratedRiskHead(in_features=82)
+    risk_head.fit(
+        X_train=X_train,
+        y_train=y_train,
+        X_val=X_cal,
+        y_val=y_cal,
+        amounts_train=amt_train,
+        amounts_val=amt_cal,
+        epochs=5,
+    )
+
+    conformal = SplitConformalCalibrator()
+    probs_cal = risk_head.predict_multi_proba(X_cal)
+    y_cal_multi = risk_head._prepare_labels(y_cal, amt_cal).numpy()
+    conformal.calibrate(probs_cal, y_cal_multi)
+
+    reward_calc = RewardCalculator()
+
+    # 3. Model 3: Risk Head Alone (Probability Thresholding)
+    probs_test = risk_head.predict_multi_proba(X_test)
+    p_fraud_test = probs_test[:, 2]
+    actions_risk_head = []
+    for p_val, amt in zip(p_fraud_test, amt_test):
+        if p_val >= 0.55:
+            actions_risk_head.append("HOLD_FOR_REVIEW")
+        elif p_val >= 0.20 or amt >= 50000:
+            actions_risk_head.append("CHALLENGE")
+        else:
+            actions_risk_head.append("ALLOW")
+
+    cost_risk_head = reward_calc.evaluate_batch(actions_risk_head, list(y_test), list(amt_test))
+    act_dist_head = {
+        act: round(float(actions_risk_head.count(act) / len(actions_risk_head)), 4)
+        for act in set(actions_risk_head)
+    }
+
+    # 4. Model 4: Full Pipeline (GAT + Conformal + DQN + Mask + Override)
+    print("Training DQN Policy with policy mask on historical training split...")
+    dqn = DQNActionPolicy(state_dim=7)
+    policy_mask = PolicyMask()
+
+    # Create historical DQN training tuples
+    dqn_states = []
+    allowed_list = []
+    probs_train = risk_head.predict_multi_proba(X_train)
+    p_train = probs_train[:, 2]
+    sets_train = conformal.predict_batch(probs_train)
+
+    for s, amt, p_val, tab in zip(sets_train, amt_train, p_train, X_tab[:train_end]):
+        dqn_states.append(dqn.encode_state(s, amt, p_val, tab))
+        allowed, _ = policy_mask.get_allowed_actions(amount=amt)
+        allowed_list.append(allowed)
+
+    dqn.train_on_history(
+        states=dqn_states,
+        labels=list(y_train),
+        amounts=list(amt_train),
+        allowed_actions_list=allowed_list,
+        epochs=3,
+        batch_size=64,
+    )
+
+    print("Evaluating Full Pipeline with DecisionRouter...")
+    router = DecisionRouter(
+        risk_head=risk_head,
+        conformal_calibrator=conformal,
+        dqn_policy=dqn,
+    )
+
+    actions_full = []
+    latencies = []
+    for evt, tab, gat_e in zip(events_test, X_tab_test, X_gat_test):
+        res = router.route(evt, tabular_features=tab, gat_embedding=gat_e)
+        actions_full.append(res.action)
+        latencies.append(res.latency_ms)
+
+    cost_full = reward_calc.evaluate_batch(actions_full, list(y_test), list(amt_test))
+    act_dist_full = {
+        act: round(float(actions_full.count(act) / len(actions_full)), 4)
+        for act in set(actions_full)
+    }
+
+    p50_lat = float(np.percentile(latencies, 50))
+    p99_lat = float(np.percentile(latencies, 99))
+
+    comparison = {
+        "dataset": "PaySim",
+        "test_events": len(y_test),
+        "test_frauds": int(sum(y_test)),
+        "models": {
+            "baseline_a": {
+                "name": "Baseline A (GBDT Tabular)",
+                "cost_per_10k": base_a_metrics["cost_per_10k"],
+                "total_reward": base_a_metrics["total_reward"],
+                "action_distribution": base_a_metrics["action_distribution"],
+            },
+            "baseline_b": {
+                "name": "Baseline B (Bayes-Optimal Cost-Sensitive)",
+                "cost_per_10k": base_b_metrics["cost_per_10k"],
+                "total_reward": base_b_metrics["total_reward"],
+                "action_distribution": base_b_metrics["action_distribution"],
+            },
+            "risk_head_alone": {
+                "name": "Risk Head Alone (GAT + MLP + Calibrated Thresholds)",
+                "cost_per_10k": round(cost_risk_head["cost_per_10k"], 2),
+                "total_reward": round(cost_risk_head["total_reward"], 2),
+                "action_distribution": act_dist_head,
+            },
+            "full_pipeline": {
+                "name": "Full Pipeline (GAT + Conformal + DQN + Mask + Override)",
+                "cost_per_10k": round(cost_full["cost_per_10k"], 2),
+                "total_reward": round(cost_full["total_reward"], 2),
+                "action_distribution": act_dist_full,
+                "latency_p50_ms": round(p50_lat, 3),
+                "latency_p99_ms": round(p99_lat, 3),
+            },
+        },
+    }
+
+    reports_dir = get_project_root() / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    comp_file = reports_dir / "all_models_comparison.json"
+    with open(comp_file, "w", encoding="utf-8") as f:
+        json.dump(comparison, f, indent=2)
+
+    print(f"\nAll models comparison saved to {comp_file}")
+    print("\n--- Summary Cost per 10,000 Payments ---")
+    for v in comparison["models"].values():
+        print(f"  {v['name']}: Cost/10k = INR {v['cost_per_10k']:,.2f}")
+
+    return comparison
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate FraudSense Baselines & Models")
     parser.add_argument("--samples", type=int, default=50000, help="Number of samples to evaluate")
     parser.add_argument(
         "--phase",
         type=int,
-        default=3,
-        help="Phase evaluation: 2 for baselines, 3 for full GAT+RiskHead+Conformal",
+        default=4,
+        help="Phase evaluation: 2 for baselines, 3 for conformal, 4 for full comparison",
     )
     args = parser.parse_args()
 
     if args.phase == 2:
         run_baseline_evaluation(n_samples=args.samples)
-    else:
-        run_baseline_evaluation(n_samples=args.samples)
+    elif args.phase == 3:
         run_phase3_evaluation(n_samples=args.samples)
+    else:
+        run_phase4_evaluation(n_samples=args.samples)

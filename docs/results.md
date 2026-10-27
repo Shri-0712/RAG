@@ -6,13 +6,21 @@
 
 ## 1. Summary of Model Progression
 
-| Model | Graph Features | Conformal Sets | Policy Mechanism | PR-AUC | Recall @ 0.5% FPR | Recall @ 1.0% FPR | Cost per 10,000 (INR) | Primary Operating Action Distribution |
+| Model | Graph Features | Conformal Sets | Policy Mechanism | PR-AUC | Cost per 10,000 (INR) | Total Test Reward (INR) | Primary Operating Action Distribution | Fast-Path Latency (p99) |
 |---|---|---|---|---|---|---|---|---|
-| **Baseline A** | None | No | GBDT + Tuned Thresholds | **1.000** | **1.000** | **1.000** | -₹5,687,833.57 | ALLOW: 99.62%, HOLD: 0.38% |
-| **Baseline B** | None | No | Bayes-Optimal Cost-Sensitive | — | — | — | -₹5,558,269.92 | ALLOW: 66.82%, CHALLENGE: 32.59%, HOLD: 0.59% |
-| **Risk Head Alone (GAT + MLP)** | 64-dim GAT | No | Calibrated Temperature ($T=1.40$) | 0.403 | 0.667 | 0.833 | -₹4,982,100.00 | ALLOW: 68.20%, HOLD: 3.10%, CHAL: 28.70% |
-| **GAT + Conformal Split Sets** | 64-dim GAT | **Yes (Coverage 96.8%)** | Conformal Arbitration (Sec 5) | — | — | — | **-₹5,189,532.59** | ALLOW: 44.25%, CHALLENGE: 53.84%, HOLD: 1.91% |
-| **Full Pipeline (GAT + Conformal + DQN)** | 64-dim GAT | Yes | DQN Policy + Regulatory Mask | *Phase 4* | *Phase 4* | *Phase 4* | *Phase 4* | *Phase 4* |
+| **Baseline A (GBDT Tabular)** | None | No | GBDT + Tuned Thresholds | **1.000** | **-₹5,687,833.57** | **+₹5,687,833.57** | ALLOW: 99.62%, HOLD: 0.38% | < 0.1 ms |
+| **Baseline B (Cost-Sensitive)** | None | No | Bayes-Optimal Cost Minimizer | — | -₹5,558,269.92 | +₹5,558,269.92 | ALLOW: 66.82%, CHAL: 32.59%, HOLD: 0.59% | < 0.1 ms |
+| **Risk Head Alone (GAT + MLP)** | 64-dim GAT | No | Calibrated Temperature ($T=1.40$) | 0.403 | -₹5,574,204.84 | +₹5,574,204.84 | CHAL: 96.42%, ALLOW: 3.12%, HOLD: 0.46% | < 0.1 ms |
+| **Full Pipeline (GAT + Conformal + DQN + Mask)** | 64-dim GAT | **Yes (Coverage 96.8%)** | Policy Mask + DQN + Override | 0.403 | -₹5,463,307.63 | +₹5,463,307.63 | CHAL: 97.06%, ALLOW: 1.94%, HOLD: 1.00% | **0.082 ms** |
+
+*(Negative cost indicates positive net financial payoff / prevented fraud losses under Section 6 parameters).*
+
+> **Critical Empirical Finding on DQN Necessity**:
+> Under the PaySim tabular distribution, **Baseline A (GBDT with tuned thresholds) achieves the lowest operational cost (-₹5,687,833.57)**, outperforming both the Risk Head alone and the DQN-driven Full Pipeline.
+> We do **not** claim that the DQN is superior for static tabular fraud classification. The primary role of the Full Pipeline is not raw unconstrained profit maximization, but rather:
+> 1. Providing **distribution-free finite-sample coverage guarantees** via split conformal prediction.
+> 2. Enforcing statutory compliance constraints (RBI Master Direction natural justice gates, case opening prerequisites, and supervisor sign-offs for high-value releases).
+> 3. Sub-0.1ms fast-path arbitration without LLM latency.
 
 *(Negative cost indicates positive net financial payoff / prevented fraud losses).*
 

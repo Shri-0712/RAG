@@ -75,7 +75,27 @@ This document records architectural decisions, assumptions, mathematical definit
 
 ---
 
-## 5. Policy & Reinforcement Learning (Phases 4+ Preview)
+## 5. Policy Mask, DQN & Decision Router (Phase 4)
+
+- **Decision 5.1**: Policy Mask Implementation.
+  - Implemented `PolicyMask` checking RBI clauses `MD-2.1.1` (restricting `HOLD_FOR_REVIEW` to cases with an opened case record) and `MD-3.4.2` (forbidding silent `ALLOW` for amounts $\ge ₹50,000$).
+- **Decision 5.2**: DQN Single-Step Contextual Bandit Formulation.
+  - State space: 7 dimensions (conformal set membership, normalized log amount bucket, calibrated fraud risk probability, amount velocity ratios, and counterparty frequency).
+  - Discount factor $\gamma = 0.0$: In high-volume credit/debit transaction streams, payment decisions are non-episodic (an authorization for payer A does not alter arrival states of unrelated payer B). Setting $\gamma=0$ yields a stable, fast contextual optimizer directly targeting the operational payoff matrix.
+- **Decision 5.3**: Section 5 Fast-Path Hierarchical Arbitrator.
+  - Precedence order:
+    1. Fail-Safe fallback on timeout ($> 200\text{ ms}$) or exception: low-value $\to$ ALLOW, high-value $\to$ CHALLENGE.
+    2. High-value rule: amount $\ge ₹50,000 \to$ at least CHALLENGE; becomes HOLD if conformal set contains FRAUD.
+    3. Ambiguous/wide set rule: $C = \{\text{CHALLENGE}\}$ or both ALLOW and FRAUD $\to$ CHALLENGE (HOLD if wide set $\ge 2$ with FRAUD or novel).
+    4. Isolated set rules: $C = \{\text{FRAUD}\} \to$ HOLD; $C = \{\text{ALLOW}\} \to$ ALLOW.
+    5. Amount override and regulatory policy mask enforcement.
+  - Fast-path execution latency measured at **p50 = 0.067 ms**, **p99 = 0.082 ms**, far below the 200ms budget.
+- **Decision 5.4**: Transparent Assessment on DQN Necessity.
+  - As required by the specification, we evaluated both the GBDT baseline and DQN under identical parameters. On tabular PaySim data, Baseline A achieves a slightly higher financial payoff than the DQN (-₹5.68M vs -₹5.46M). We explicitly do not claim DQN is superior for pure tabular classification; the Full Pipeline's primary value is providing guaranteed conformal coverage, regulatory mask enforcement, and relational graph resilience.
+
+---
+
+## 6. Cases, Storage & Challenge Service (Phases 5+ Preview)
 
 - **Decision 4.1**: Split Conformal Prediction formulation.
   - Nonconformity score: $s(x, y) = 1 - \hat{P}(Y = y \mid x)$.
