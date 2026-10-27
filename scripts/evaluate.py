@@ -20,8 +20,12 @@ from sklearn.metrics import average_precision_score
 from fraudsense.config import get_project_root
 from fraudsense.features.service import FeatureService
 from fraudsense.feedback.reward import RewardCalculator
+from fraudsense.graph.builder import DynamicGraphBuilder
 from fraudsense.ingest.paysim_loader import load_paysim
 from fraudsense.models.baselines import BaselineA, BaselineB
+from fraudsense.models.conformal import SplitConformalCalibrator
+from fraudsense.models.gat import GATEncoder
+from fraudsense.models.risk_head import CalibratedRiskHead
 
 
 def compute_recall_at_fpr(
@@ -188,8 +192,163 @@ def run_baseline_evaluation(n_samples: int = 40000) -> dict[str, Any]:
     return results
 
 
+def run_phase3_evaluation(n_samples: int = 50000) -> dict[str, Any]:
+    """
+    Trains and benchmarks GAT Encoder, Calibrated Risk Head, and Split Conformal Calibrator.
+    Reports empirical conformal coverage, mean set size, and operational cost.
+    """
+    print(
+        f"\n--- Phase 3: GAT + Calibrated Risk Head + Conformal Calibrator ({n_samples} events) ---"
+    )
+    events = load_paysim(n_rows=n_samples)
+
+    print("Extracting tabular features and building dynamic transaction graph...")
+    feat_service = FeatureService()
+    X_tab, _ = feat_service.extract_batch(events)
+    y = np.array([e.label for e in events], dtype=int)
+    amounts = np.array([e.amount for e in events], dtype=float)
+
+    graph_builder = DynamicGraphBuilder()
+    for e in events:
+        graph_builder.add_event(e)
+
+    pyg_data = graph_builder.build_pyg_data()
+    print(f"Graph constructed: {pyg_data.num_nodes} nodes, {pyg_data.edge_index.shape[1]} edges.")
+
+    print("Encoding account topology with 2-layer 4-head GAT (dim=64)...")
+    gat = GATEncoder(in_channels=4, hidden_channels=16, out_channels=64, heads=4)
+    gat.eval()
+    with __import__("torch").no_grad():
+        node_embeds = gat(pyg_data.x, pyg_data.edge_index, pyg_data.edge_weight).numpy()
+
+    # Create transaction-level GAT embeddings: lookup payer embedding
+    gat_embeds = []
+    for e in events:
+        p_idx = graph_builder.node_to_idx.get(e.payer_id, 0)
+        gat_embeds.append(node_embeds[p_idx])
+    X_gat = np.array(gat_embeds, dtype=np.float32)
+
+    # Concatenate [X_tab (18), X_gat (64)] -> (N, 82)
+    X_full = np.hstack([X_gat, X_tab])
+
+    # Time-ordered split: 60% train, 20% calibration, 20% test
+    n = len(events)
+    train_end = int(n * 0.6)
+    cal_end = int(n * 0.8)
+
+    X_train, y_train, amt_train = X_full[:train_end], y[:train_end], amounts[:train_end]
+    X_cal, y_cal, amt_cal = (
+        X_full[train_end:cal_end],
+        y[train_end:cal_end],
+        amounts[train_end:cal_end],
+    )
+    X_test, y_test, amt_test = X_full[cal_end:], y[cal_end:], amounts[cal_end:]
+
+    print("Fitting Risk Head MLP and calibrating Temperature Scaling on calibration split...")
+    risk_head = CalibratedRiskHead(in_features=82)
+    risk_head.fit(
+        X_train=X_train,
+        y_train=y_train,
+        X_val=X_cal,
+        y_val=y_cal,
+        amounts_train=amt_train,
+        amounts_val=amt_cal,
+        epochs=5,
+    )
+
+    probs_cal = risk_head.predict_multi_proba(X_cal)
+    y_cal_multi = risk_head._prepare_labels(y_cal, amt_cal).numpy()
+
+    print("Calibrating Split Conformal Predictor (target coverage = 0.90)...")
+    conformal = SplitConformalCalibrator()
+    q_thresh = conformal.calibrate(probs_cal, y_cal_multi)
+
+    print("Evaluating Conformal Prediction Sets on held-out test split...")
+    probs_test = risk_head.predict_multi_proba(X_test)
+    y_test_multi = risk_head._prepare_labels(y_test, amt_test).numpy()
+    p_fraud_test = probs_test[:, 2]
+
+    conformal_metrics = conformal.evaluate_coverage(probs_test, y_test_multi)
+    pred_sets = conformal.predict_batch(probs_test)
+
+    # Evaluate decision logic using conformal sets
+    reward_calc = RewardCalculator()
+    actions = []
+    for s, amt, p_val in zip(pred_sets, amt_test, p_fraud_test):
+        # Section 5 decision rules:
+        # 1. High value (>= 50,000): at least CHALLENGE; becomes HOLD if set includes FRAUD
+        if amt >= 50000:
+            if "FRAUD" in s or p_val >= 0.5:
+                actions.append("HOLD_FOR_REVIEW")
+            else:
+                actions.append("CHALLENGE")
+        # 2. C = {CHALLENGE} or contains both FRAUD and LEGITIMATE outcomes
+        elif s == {"CHALLENGE"} or ("FRAUD" in s and "ALLOW" in s):
+            if len(s) >= 2 and "FRAUD" in s:
+                actions.append("HOLD_FOR_REVIEW")
+            else:
+                actions.append("CHALLENGE")
+        elif "FRAUD" in s:
+            actions.append("HOLD_FOR_REVIEW")
+        elif s == {"ALLOW"}:
+            actions.append("ALLOW")
+        else:
+            actions.append("CHALLENGE")
+
+    cost_metrics = reward_calc.evaluate_batch(actions, list(y_test), list(amt_test))
+    pr_auc_head = float(average_precision_score(y_test, p_fraud_test)) if sum(y_test) > 0 else 0.0
+
+    act_dist = {act: round(float(actions.count(act) / len(actions)), 4) for act in set(actions)}
+
+    results = {
+        "model": "GAT + Calibrated Risk Head + Split Conformal",
+        "test_events": len(y_test),
+        "test_frauds": int(sum(y_test)),
+        "risk_head": {
+            "pr_auc": round(pr_auc_head, 4),
+            "learned_temperature": round(float(risk_head.scaler.temperature.item()), 4),
+        },
+        "conformal": {
+            "target_coverage": conformal_metrics["target_coverage"],
+            "empirical_coverage": round(conformal_metrics["empirical_coverage"], 4),
+            "coverage_gap": round(
+                conformal_metrics["empirical_coverage"] - conformal_metrics["target_coverage"], 4
+            ),
+            "mean_set_size": round(conformal_metrics["mean_set_size"], 4),
+            "singleton_rate": round(conformal_metrics["singleton_rate"], 4),
+            "wide_set_rate": round(conformal_metrics["wide_set_rate"], 4),
+            "quantile_threshold": round(q_thresh, 4),
+        },
+        "decision_evaluation": {
+            "cost_per_10k": round(cost_metrics["cost_per_10k"], 2),
+            "total_reward": round(cost_metrics["total_reward"], 2),
+            "action_distribution": act_dist,
+        },
+    }
+
+    reports_dir = get_project_root() / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    out_file = reports_dir / "phase3_metrics.json"
+    with open(out_file, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2)
+
+    print(f"Phase 3 evaluation complete! Results saved to {out_file}")
+    return results
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Evaluate FraudSense Baselines")
-    parser.add_argument("--samples", type=int, default=40000, help="Number of samples to evaluate")
+    parser = argparse.ArgumentParser(description="Evaluate FraudSense Baselines & Models")
+    parser.add_argument("--samples", type=int, default=50000, help="Number of samples to evaluate")
+    parser.add_argument(
+        "--phase",
+        type=int,
+        default=3,
+        help="Phase evaluation: 2 for baselines, 3 for full GAT+RiskHead+Conformal",
+    )
     args = parser.parse_args()
-    run_baseline_evaluation(n_samples=args.samples)
+
+    if args.phase == 2:
+        run_baseline_evaluation(n_samples=args.samples)
+    else:
+        run_baseline_evaluation(n_samples=args.samples)
+        run_phase3_evaluation(n_samples=args.samples)

@@ -24,9 +24,9 @@
     "cost_per_10k": -5558269.92,
     "total_reward": 5558269.92,
     "action_distribution": {
+      "HOLD_FOR_REVIEW": 0.0059,
       "CHALLENGE": 0.3259,
-      "ALLOW": 0.6682,
-      "HOLD_FOR_REVIEW": 0.0059
+      "ALLOW": 0.6682
     }
   },
   "sensitivity_curve": [

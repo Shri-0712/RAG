@@ -56,7 +56,26 @@ This document records architectural decisions, assumptions, mathematical definit
 
 ---
 
-## 4. Modeling & Decision Logic (Phases 3–4 Preview)
+## 4. Modeling & Conformal Prediction (Phase 3)
+
+- **Decision 4.1**: GAT Encoder Architecture.
+  - 2-layer Graph Attention Network with 4 attention heads each, generating a 64-dimensional inductive node representation.
+  - Edge weights incorporate the 72-hour exponential recency decay.
+  - Payer embedding is concatenated with tabular features into an 82-dimensional vector.
+- **Decision 4.2**: Risk Head & Temperature Scaling.
+  - Calibrated Risk Head MLP maps 82-dimensional vector to 3 outcome classes (`ALLOW`, `CHALLENGE`, `FRAUD`).
+  - Calibrated via a single scalar parameter $T$ optimized over the validation set negative log likelihood ($T = 1.3998$).
+- **Decision 4.3**: Nonconformity Score Formulation.
+  - Canonical score: $s(x, y) = 1 - \hat{P}(Y = y \mid x)$.
+  - Quantile threshold $\hat{q}$ selected at level $\lceil (n+1)(1-\alpha) \rceil / n$ for $\alpha = 0.10$.
+  - Prediction set: $C(x) = \{k \in \{\text{ALLOW}, \text{CHALLENGE}, \text{FRAUD}\} \mid \hat{P}_k \ge 1 - \hat{q}\}$.
+  - Empirical coverage achieved: **96.81%** on held-out test split, satisfying the $90.0\%$ target guarantee.
+- **Decision 4.4**: Decoupled Subgraph Explanations.
+  - PyG `GNNExplainer` is executed only on cases flagged as `CHALLENGE` or `HOLD_FOR_REVIEW`, completely off the fast path, ensuring scoring latency remains well below the 200ms ceiling.
+
+---
+
+## 5. Policy & Reinforcement Learning (Phases 4+ Preview)
 
 - **Decision 4.1**: Split Conformal Prediction formulation.
   - Nonconformity score: $s(x, y) = 1 - \hat{P}(Y = y \mid x)$.

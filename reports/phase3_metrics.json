@@ -1,0 +1,27 @@
+{
+  "model": "GAT + Calibrated Risk Head + Split Conformal",
+  "test_events": 10000,
+  "test_frauds": 6,
+  "risk_head": {
+    "pr_auc": 0.4031,
+    "learned_temperature": 1.3998
+  },
+  "conformal": {
+    "target_coverage": 0.9,
+    "empirical_coverage": 0.9681,
+    "coverage_gap": 0.0681,
+    "mean_set_size": 1.0,
+    "singleton_rate": 1.0,
+    "wide_set_rate": 0.0,
+    "quantile_threshold": 0.4433
+  },
+  "decision_evaluation": {
+    "cost_per_10k": -5189532.59,
+    "total_reward": 5189532.59,
+    "action_distribution": {
+      "HOLD_FOR_REVIEW": 0.0191,
+      "CHALLENGE": 0.5384,
+      "ALLOW": 0.4425
+    }
+  }
+}
